@@ -110,8 +110,8 @@ This application addresses the critical challenge of maximizing processing, pack
 ## 📊 Dataset
 
 The application uses a comprehensive dairy dataset containing:
-- **20,000+ records** of daily operations
-- **Date range**: 2020-2024
+- **4,000+ records** of daily operations
+- **Date range**: 2014-2024
 - **Variables**:
   - Milk supply (liters)
   - Product demands (500ml milk, 1L milk, butter, cheese, yogurt)
