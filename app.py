@@ -304,6 +304,9 @@ def make_future_forecast(df, model, scaler, target_col, X_columns, n_days=30):
             if col not in new_row:
                 new_row[col] = 0
         X_pred = pd.DataFrame([new_row])[X_columns]
+        # Debug print for input features
+        st.write("Predicting for date:", date)
+        st.write("Input features:", X_pred)
         if scaler is not None:
             X_pred = scaler.transform(X_pred)
         y_pred = model.predict(X_pred)[0]
@@ -334,7 +337,10 @@ def create_forecasting_section(df):
     
     # Prepare features
     X, y, df_processed = prepare_features(df.copy(), target_col)
-    
+    # Add check for all-zero target column
+    if (df_processed[target_col] == 0).all():
+        st.error("All values in the target column are zero. Please check your data.")
+        return
     if st.button("🚀 Train Forecasting Models"):
         with st.spinner("Training models..."):
             results, X_train, X_test, y_train, y_test = train_models(X, y)
