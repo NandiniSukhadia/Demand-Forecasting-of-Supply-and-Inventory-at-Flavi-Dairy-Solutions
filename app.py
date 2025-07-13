@@ -237,8 +237,7 @@ def train_models(X, y):
         'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42),
         'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, random_state=42),
         'XGBoost': xgb.XGBRegressor(n_estimators=100, random_state=42),
-        'LightGBM': lgb.LGBMRegressor(n_estimators=100, random_state=42),
-        'Linear Regression': LinearRegression()
+        'LightGBM': lgb.LGBMRegressor(n_estimators=100, random_state=42)
     }
     
     # Split data
@@ -252,12 +251,8 @@ def train_models(X, y):
     results = {}
     
     for name, model in models.items():
-        if name == 'Linear Regression':
-            model.fit(X_train_scaled, y_train)
-            y_pred = model.predict(X_test_scaled)
-        else:
-            model.fit(X_train, y_train)
-            y_pred = model.predict(X_test)
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_test_scaled)
         
         # Calculate metrics
         mae = mean_absolute_error(y_test, y_pred)
@@ -267,7 +262,7 @@ def train_models(X, y):
         
         results[name] = {
             'model': model,
-            'scaler': scaler if name == 'Linear Regression' else None,
+            'scaler': scaler,
             'mae': mae,
             'mse': mse,
             'rmse': rmse,
@@ -277,45 +272,6 @@ def train_models(X, y):
         }
     
     return results, X_train, X_test, y_train, y_test
-
-def make_future_forecast(df, model, scaler, target_col, X_columns, n_days=30):
-    # Start with the last available data
-    history = df.copy()
-    future_dates = pd.date_range(start=history['Date'].max() + pd.Timedelta(days=1), periods=n_days, freq='D')
-    future_forecast = []
-    for date in future_dates:
-        new_row = {
-            'Date': date,
-            'DayOfWeek': date.dayofweek,
-            'Month': date.month,
-            'Quarter': date.quarter,
-            'Year': date.year,
-            'sin_day': np.sin(2 * np.pi * date.dayofweek / 7),
-            'cos_day': np.cos(2 * np.pi * date.dayofweek / 7),
-            'sin_month': np.sin(2 * np.pi * date.month / 12),
-            'cos_month': np.cos(2 * np.pi * date.month / 12),
-        }
-        for lag in [1, 7, 14, 30]:
-            new_row[f'{target_col}_lag_{lag}'] = history[target_col].iloc[-lag] if len(history) >= lag else history[target_col].mean()
-        for window in [7, 14, 30]:
-            new_row[f'{target_col}_rolling_mean_{window}'] = history[target_col].iloc[-window:].mean() if len(history) >= window else history[target_col].mean()
-            new_row[f'{target_col}_rolling_std_{window}'] = history[target_col].iloc[-window:].std() if len(history) >= window else history[target_col].std()
-        for col in X_columns:
-            if col not in new_row:
-                new_row[col] = 0
-        X_pred = pd.DataFrame([new_row])[X_columns]
-        # Debug print for input features
-        st.write("Predicting for date:", date)
-        st.write("Input features:", X_pred)
-        if scaler is not None:
-            X_pred = scaler.transform(X_pred)
-        y_pred = model.predict(X_pred)[0]
-        new_row[target_col] = y_pred
-        future_forecast.append({'Date': date, 'Forecast': y_pred})
-        history = pd.concat([history, pd.DataFrame([new_row])], ignore_index=True)
-    forecast_df = pd.DataFrame(future_forecast)
-    forecast_df['Forecast'] = forecast_df['Forecast'].round(2)
-    return forecast_df
 
 def create_forecasting_section(df):
     """Create the forecasting section"""
@@ -337,10 +293,7 @@ def create_forecasting_section(df):
     
     # Prepare features
     X, y, df_processed = prepare_features(df.copy(), target_col)
-    # Add check for all-zero target column
-    if (df_processed[target_col] == 0).all():
-        st.error("All values in the target column are zero. Please check your data.")
-        return
+    
     if st.button("🚀 Train Forecasting Models"):
         with st.spinner("Training models..."):
             results, X_train, X_test, y_train, y_test = train_models(X, y)
@@ -357,7 +310,6 @@ def create_forecasting_section(df):
                 'RMSE': result['rmse'],
                 'R²': result['r2']
             })
-        
         performance_df = pd.DataFrame(performance_data)
         st.dataframe(performance_df, use_container_width=True)
         
@@ -365,45 +317,138 @@ def create_forecasting_section(df):
         best_model_name = min(results.keys(), key=lambda x: results[x]['rmse'])
         best_model = results[best_model_name]['model']
         best_scaler = results[best_model_name]['scaler']
-        
         st.success(f"🎯 Best Model: {best_model_name} (RMSE: {results[best_model_name]['rmse']:.2f})")
+        # Debug: Show y_test and y_pred for best model
+        st.write(f'y_test for {best_model_name}:', results[best_model_name]["y_test"].shape, results[best_model_name]["y_test"][:10])
+        st.write(f'y_pred for {best_model_name}:', results[best_model_name]["y_pred"].shape, results[best_model_name]["y_pred"][:10])
         
         # Create forecast
         st.markdown("### 🔮 Future Forecast")
         
-        # Use new robust function for future forecast
-        forecast_df = make_future_forecast(df_processed, best_model, best_scaler, target_col, X.columns, n_days=30)
+        # Generate future dates
+        last_date = df['Date'].max()
+        future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=30, freq='D')
         
-        # Create forecast plot
+        # Prepare a dataframe to hold both historical and future values for recursive feature calculation
+        df_forecast = df_processed.copy().reset_index(drop=True)
+        forecast_values = []
+        last_known_row = df_processed.iloc[-1]
+        
+        for i in range(30):
+            forecast_date = future_dates[i]
+            # Create a new row for the next day
+            new_row = {}
+            new_row['Date'] = forecast_date
+            new_row['DayOfWeek'] = forecast_date.dayofweek
+            new_row['Month'] = forecast_date.month
+            new_row['Quarter'] = forecast_date.quarter
+            new_row['Year'] = forecast_date.year
+            new_row['sin_day'] = np.sin(2 * np.pi * new_row['DayOfWeek'] / 7)
+            new_row['cos_day'] = np.cos(2 * np.pi * new_row['DayOfWeek'] / 7)
+            new_row['sin_month'] = np.sin(2 * np.pi * new_row['Month'] / 12)
+            new_row['cos_month'] = np.cos(2 * np.pi * new_row['Month'] / 12)
+            # Lag features
+            for lag in [1, 7, 14, 30]:
+                if len(df_forecast) >= lag:
+                    new_row[f'{target_col}_lag_{lag}'] = df_forecast[target_col].iloc[-lag]
+                else:
+                    new_row[f'{target_col}_lag_{lag}'] = df[target_col].mean()
+            # Rolling features
+            for window in [7, 14, 30]:
+                if len(df_forecast) >= window:
+                    new_row[f'{target_col}_rolling_mean_{window}'] = df_forecast[target_col].iloc[-window:].mean()
+                    new_row[f'{target_col}_rolling_std_{window}'] = df_forecast[target_col].iloc[-window:].std()
+                else:
+                    new_row[f'{target_col}_rolling_mean_{window}'] = df[target_col].mean()
+                    new_row[f'{target_col}_rolling_std_{window}'] = df[target_col].std()
+            # For all other features, use last known value instead of zero
+            for col in X.columns:
+                if col not in new_row and col != 'Date':
+                    new_row[col] = last_known_row[col] if col in last_known_row else 0
+            # Order columns to match training
+            X_new = pd.DataFrame([new_row])[X.columns]
+            # Scale features
+            if best_scaler:
+                X_new_scaled = best_scaler.transform(X_new)
+                y_pred = best_model.predict(X_new_scaled)[0]
+            else:
+                y_pred = best_model.predict(X_new)[0]
+            # Clip negative predictions to zero
+            y_pred = max(y_pred, 0)
+            forecast_values.append(y_pred)
+            # Add prediction to df_forecast for next iteration's lag/rolling calculation
+            new_row[target_col] = y_pred
+            df_forecast = pd.concat([df_forecast, pd.DataFrame([new_row])], ignore_index=True)
+        # Debug: Check model output on last training row
+        last_X = X.tail(1)
+        if best_scaler:
+            last_X_scaled = best_scaler.transform(last_X)
+            last_pred = best_model.predict(last_X_scaled)
+        else:
+            last_pred = best_model.predict(last_X)
+        st.write('Prediction for last training row:', last_pred)
+        
+        # --- Naive Baseline Forecast ---
+        naive_forecast = [df_processed[target_col].iloc[-1]] * 30
+        forecast_df = pd.DataFrame({'Date': future_dates, 'Forecast': forecast_values})
+
+        # --- Prophet Forecast ---
+        prophet_forecast = None
+        if st.checkbox('Show Prophet Forecast (experimental)', value=True):
+            prophet_df = df[["Date", target_col]].rename(columns={"Date": "ds", target_col: "y"})
+            m = Prophet()
+            m.fit(prophet_df)
+            future = m.make_future_dataframe(periods=30)
+            forecast_prophet = m.predict(future)
+            # Only take the forecast period
+            prophet_forecast = forecast_prophet.tail(30)["yhat"].values
+            forecast_df['Prophet'] = prophet_forecast
+
+        # --- Plot all forecasts ---
         fig = go.Figure()
-        
-        # Historical data
+        # Show only previous 1 year of historical data
+        one_year_ago = df['Date'].max() - pd.Timedelta(days=365)
+        mask_last_year = df['Date'] >= one_year_ago
+        df_last_year = df[mask_last_year]
+        # Historical (last 1 year)
         fig.add_trace(go.Scatter(
-            x=df['Date'],
-            y=df[target_col],
+            x=df_last_year['Date'],
+            y=df_last_year[target_col],
             name='Historical',
             line=dict(color='blue')
         ))
-        
-        # Forecast
+        # ML Forecast
         fig.add_trace(go.Scatter(
-            x=forecast_df['Date'],
-            y=forecast_df['Forecast'],
-            name='Forecast',
-            line=dict(color='red', dash='dash')
+            x=future_dates,
+            y=forecast_values,
+            name='ML Forecast',
+            line=dict(color='red')
         ))
-        
+        # Naive Forecast
+        fig.add_trace(go.Scatter(
+            x=future_dates,
+            y=naive_forecast,
+            name='Naive Forecast',
+            line=dict(color='green', dash='dash')
+        ))
+        # Prophet Forecast
+        if prophet_forecast is not None:
+            fig.add_trace(go.Scatter(
+                x=future_dates,
+                y=prophet_forecast,
+                name='Prophet Forecast',
+                line=dict(color='orange', dash='dot')
+            ))
         fig.update_layout(
             title=f'{selected_target} Forecast (Next 30 Days)',
             xaxis_title='Date',
             yaxis_title=selected_target,
             height=500
         )
-        
         st.plotly_chart(fig, use_container_width=True)
-        
         # Display forecast table
-        st.markdown("### 📋 Forecast Details")
+        forecast_df['Forecast'] = forecast_df['Forecast'].round(2)
+        st.markdown('### 📋 Forecast Details')
         st.dataframe(forecast_df, use_container_width=True)
 
 def create_capacity_optimization(df):
@@ -478,6 +523,9 @@ def main():
     if df is None:
         st.error("Failed to load data. Please check the CSV file.")
         return
+    
+    # Remove debug outputs
+    # (No st.write for head, tail, unique values, or summary statistics)
     
     # Sidebar
     st.sidebar.title("🥛 Dairy Forecasting")
