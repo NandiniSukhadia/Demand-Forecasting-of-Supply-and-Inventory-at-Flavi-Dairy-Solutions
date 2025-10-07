@@ -52,27 +52,27 @@ if uploaded_file is not None:
 
         # Line Chart
         st.markdown("#### 📉 Line Chart")
-        fig, ax = plt.subplots(figsize=(6, 3))
+        fig, ax = plt.subplots(figsize=(4.8, 2.4))
         ax.plot(df[x_col], df[y_col], color='orange', linewidth=1)
-        ax.set_xlabel(x_col, fontsize=8)
-        ax.set_ylabel(y_col, fontsize=8)
-        ax.set_title(f"{y_col} vs {x_col}", fontsize=10)
+        ax.set_xlabel(x_col, fontsize=7)
+        ax.set_ylabel(y_col, fontsize=7)
+        ax.set_title(f"{y_col} vs {x_col}", fontsize=9)
         plt.tight_layout()
         st.pyplot(fig, use_container_width=True, clear_figure=True)
 
         # Scatter Plot
         st.markdown("#### 🔸 Scatter Plot")
-        fig, ax = plt.subplots(figsize=(6, 3))
-        sns.scatterplot(x=df[x_col], y=df[y_col], ax=ax, s=25)
-        ax.set_title("Scatter Plot", fontsize=10)
+        fig, ax = plt.subplots(figsize=(4.8, 2.4))
+        sns.scatterplot(x=df[x_col], y=df[y_col], ax=ax, s=20)
+        ax.set_title("Scatter Plot", fontsize=9)
         plt.tight_layout()
         st.pyplot(fig, use_container_width=True, clear_figure=True)
 
         # Heatmap
         st.markdown("#### 🔥 Correlation Heatmap")
-        fig, ax = plt.subplots(figsize=(6, 3))
-        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax, annot_kws={"size": 7})
-        ax.set_title("Correlation Heatmap", fontsize=10)
+        fig, ax = plt.subplots(figsize=(4.8, 2.4))
+        sns.heatmap(df[numeric_cols].corr(), annot=True, cmap="coolwarm", ax=ax, annot_kws={"size": 6})
+        ax.set_title("Correlation Heatmap", fontsize=9)
         plt.tight_layout()
         st.pyplot(fig, use_container_width=True, clear_figure=True)
     else:
@@ -108,18 +108,18 @@ if uploaded_file is not None:
 
             # Actual vs Predicted Plot
             st.markdown("### 📊 Actual vs Predicted")
-            fig, ax = plt.subplots(figsize=(6, 3))
-            ax.scatter(X_test, y_test, color='blue', label='Actual', s=25)
+            fig, ax = plt.subplots(figsize=(4.8, 2.4))
+            ax.scatter(X_test, y_test, color='blue', label='Actual', s=20)
             ax.plot(X_test, y_pred, color='red', linewidth=1.5, label='Predicted')
-            ax.set_xlabel(feature_col, fontsize=8)
-            ax.set_ylabel(target_col, fontsize=8)
+            ax.set_xlabel(feature_col, fontsize=7)
+            ax.set_ylabel(target_col, fontsize=7)
             ax.legend(fontsize=7)
             plt.tight_layout()
             st.pyplot(fig, use_container_width=True, clear_figure=True)
 
             # Future Prediction
             st.markdown("### 🔮 Future Trend Prediction")
-            future_val = st.number_input(f"Enter future {feature_col} value:", value=float(df[feature_col].mean()))
+            future_val = st.number_input(f"Future {feature_col} value:", value=float(df[feature_col].mean()))
             future_pred = model.predict([[future_val]])[0]
             st.write(f"**Predicted {target_col} for {feature_col} = {future_val}: {future_pred:.2f}")
     else:
